@@ -1,0 +1,55 @@
+---
+title: "Simple similiarity in CHILDES"
+author: "Dan Yurovsky & Claire Bergey"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+  toc: false
+number_sections: false
+theme: lumen
+toc_float: false
+code_folding: hide
+---
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(tidyverse)
+library(tidytext)
+library(childesr)
+
+opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
+               error = FALSE, cache = TRUE, tidy = FALSE)
+```
+
+
+```{r co-occurrence}
+
+tokens <-  c("river", "boat", "lake")
+example_tokens <- get_tokens(token = tokens)
+
+co_occurrs <- example_tokens %>%
+  mutate(token = tolower(gloss)) %>%
+  group_by(utterance_id, token) %>%
+  summarise(n = n()) %>%
+  spread(token, n, fill = 0)  %>%
+  ungroup()
+
+
+counts <- function(word) {
+  
+  word <- enquo(word)
+  
+  print(word)
+
+  co_occurrs %>%
+    filter((!!word) > 0) %>%
+    select(-utterance_id) %>%
+    summarise_all(sum)
+}
+
+
+map(tokens, function(token) counts(!!as.symbol(token))) %>%
+  bind_rows()
+
+```
