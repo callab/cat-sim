@@ -20,12 +20,15 @@ library(childesr)
 
 opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
                error = FALSE, cache = TRUE, tidy = FALSE)
+
+theme_set(theme_classic(base_size = 14))
 ```
 
 
 ```{r co-occurrence}
 
-tokens <-  c("river", "boat", "lake")
+tokens <-  c("boat", "lake", "river", "bee", "ant", "honey", 
+             "cow", "zebra", "milk")
 example_tokens <- get_tokens(token = tokens)
 
 co_occurrs <- example_tokens %>%
@@ -33,23 +36,45 @@ co_occurrs <- example_tokens %>%
   group_by(utterance_id, token) %>%
   summarise(n = n()) %>%
   spread(token, n, fill = 0)  %>%
-  ungroup()
+  ungroup() 
 
-
-counts <- function(word) {
+counts <- function(word, rows) {
   
   word <- enquo(word)
-  
-  print(word)
 
   co_occurrs %>%
+    slice(rows) %>%
     filter((!!word) > 0) %>%
     select(-utterance_id) %>%
-    summarise_all(sum)
+    summarise_all(sum) %>%
+    mutate(target = as.character(word)[2])
 }
 
 
-map(tokens, function(token) counts(!!as.symbol(token))) %>%
-  bind_rows()
+sections <- seq(500, 30000, 500)
+
+co_occur_subset <- function(max_row) {
+  map(tokens, function(token) counts(!!as.symbol(token), 1:max_row)) %>%
+    bind_rows() %>%
+    mutate(max_row = max_row)
+}
+
+
+cumulative_co_occurs <- map(sections,  co_occur_subset) %>%
+  bind_rows() %>%
+  gather(word, count, tokens) %>%
+  group_by(max_row, target) %>%
+  filter(target != word) %>%
+  mutate(co_occur = count/sum(count, na.rm = T))
+
+
+
+ggplot(cumulative_co_occurs, aes(x = max_row, y= co_occur, color = word)) + 
+  facet_wrap(~target) + 
+  geom_line() 
+ # scale_y_continuous(limits = c(0, .3))
+
+
+
 
 ```
