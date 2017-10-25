@@ -17,28 +17,36 @@ library(knitr)
 library(tidyverse)
 library(tidytext)
 library(childesr)
-library(modelr)
-
 opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
                error = FALSE, cache = TRUE, tidy = FALSE)
 
 theme_set(theme_classic(base_size = 14))
+library(lsa)
 ```
 
 
 ```{r co-occurrence}
-
-bootstrap <- function(data, n, size, id = ".id") {
-    bootstrap <- purrr::rerun(n, resample_bootstrap(data))
-    df <- tibble::data_frame(strap = bootstrap) %>%
-      mutate(id = 1:n())
-}
-
 tokens <-  c("boat", "lake", "river", "bee", "ant", "honey", 
-             "cow", "zebra", "milk")
-example_tokens <- get_tokens(token = tokens)
+             "cow", "dog", "milk", "crib", "baby", "bed", "sleep")
+
+types <- get_types(type = "*")
+
+
+top_words <- types %>%
+  filter(!gloss %in% c("xxx", "yyy")) %>%
+  group_by(gloss) %>%
+  summarise(count = sum(count)) %>%
+  filter(!str_detect(gloss, "[:punct:]")) %>%
+  arrange(desc(count)) %>%
+  slice(1:100) %>%
+  pull(gloss) 
+  
+example_tokens <- get_tokens(token = c(tokens, top_words))
+
 
 co_occurrs <- example_tokens %>%
+  filter(!is.na(target_child_age)) %>%
+  arrange(target_child_age, transcript_id, utterance_id) %>%
   mutate(token = tolower(gloss)) %>%
   group_by(utterance_id, token) %>%
   summarise(n = n()) %>%
@@ -49,49 +57,77 @@ counts <- function(word, rows) {
   
   word <- enquo(word)
 
-   samples <- co_occurrs %>%
-    bootstrap(10, rows) %>%
-    mutate(strap = purrr::map(strap, dplyr::as_data_frame)) %>%
-    unnest()
-  
-  samples %>%
+  co_occurrs %>%
+    slice(rows) %>%
     filter((!!word) > 0) %>%
-     select(-utterance_id) %>%
-     group_by(id) %>%
-     summarise_all(sum) %>%
-     select(-id) %>%
-     summarise_all(mean) %>%
-     mutate(target = as.character(word)[2])
+    select(-utterance_id) %>%
+    summarise_all(sum) %>%
+    mutate(target = as.character(word)[2])
 }
 
 
-sections <- seq(1000, 30000, 1000)
+sections <- seq(500, 25000, 500)
 
-co_occur_subset <- function(rows) {
-  map(tokens, function(token) counts(!!as.symbol(token), rows)) %>%
+co_occur_subset <- function(max_row) {
+  map(tokens, function(token) counts(!!as.symbol(token), 1:max_row)) %>%
     bind_rows() %>%
-    mutate(rows = rows)
+    mutate(max_row = max_row)
 }
 
 
 cumulative_co_occurs <- map(sections,  co_occur_subset) %>%
   bind_rows() %>%
   gather(word, count, tokens) %>%
-  group_by(rows, target) %>%
-  filter(target != word) %>%
-  mutate(co_occur = count/sum(count, na.rm = T),
-         co_occur = if_else(is.na(co_occur), 0, co_occur))
+  group_by(max_row, target)
+
+# total_occurs <- cumulative_co_occurs %>%
+#   filter(word == target) %>%
+#   rename(occurs = count) %>%
+#   select(-word)
+#  
+cosine_sims <- function(df) {
+  df_matrix <- df %>%
+    select(-word, -max_row) %>%
+    as.matrix()
+  
+  cosine(df_matrix) %>%
+    as_data_frame() %>%
+    mutate(word = names(.)) %>%
+    gather(target, similarity, -word) %>%
+    mutate(max_row = unique(df$max_row))
+    
+}
 
 
-ggplot(cumulative_co_occurs, aes(x = rows, y= co_occur, color = word)) + 
+cosine_sims <- cumulative_co_occurs %>%
+  arrange(max_row, target, word) %>%
+  spread(target, count) %>%
+  ungroup() %>%
+  split(.$max_row) %>%
+  map(cosine_sims) %>%
+  bind_rows()
+
+
+
+ggplot(filter(cosine_sims, word != target), 
+       aes(x = max_row, y= similarity, color = word)) + 
   facet_wrap(~target) + 
-  geom_line() +
-  scale_color_brewer(palette = "Set1")
+  geom_line() 
 
-wide_co_occurs <- cumulative_co_occurs %>%
-  select(-co_occur) %>%
-  spread(word, count) %>%
-  filter(max_row = 4500)
+
+all_co_occurs <- left_join(cumulative_co_occurs, total_occurs)
+
+%>%
+  mutate(occurrs = )
+  filter(target != word) %>%
+  mutate(co_occur = count/sum(count, na.rm = T))
+
+ggplot(cumulative_co_occurs, aes(x = max_row, y= co_occur, color = word)) + 
+  facet_wrap(~target) + 
+  geom_line() 
+ # scale_y_continuous(limits = c(0, .3))
+
+
 
 
  # scale_y_continuous(limits = c(0, .3))
