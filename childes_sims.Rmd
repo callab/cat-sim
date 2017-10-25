@@ -41,8 +41,7 @@ top_words <- types %>%
   slice(1:100) %>%
   pull(gloss) 
   
-example_tokens <- get_tokens(token = c(tokens, top_words))
-
+example_tokens <- get_tokens(token = tokens)
 
 co_occurrs <- example_tokens %>%
   filter(!is.na(target_child_age)) %>%
@@ -66,10 +65,11 @@ counts <- function(word, rows) {
 }
 
 
-sections <- seq(500, 25000, 500)
+sections <- seq(1000, 25000, 1000)
 
 co_occur_subset <- function(max_row) {
-  map(tokens, function(token) counts(!!as.symbol(token), 1:max_row)) %>%
+  map(c(tokens, top_words), 
+      function(token) counts(!!as.symbol(token), 1:max_row)) %>%
     bind_rows() %>%
     mutate(max_row = max_row)
 }
@@ -101,25 +101,26 @@ cosine_sims <- function(df) {
 
 cosine_sims <- cumulative_co_occurs %>%
   arrange(max_row, target, word) %>%
+  filter(target %in% tokens) %>%
   spread(target, count) %>%
   ungroup() %>%
   split(.$max_row) %>%
   map(cosine_sims) %>%
   bind_rows()
 
+token_cosines <- cosine_sims %>%
+  filter(target %in% tokens) %>%
+  filter(word != target)
 
-
-ggplot(filter(cosine_sims, word != target), 
+ggplot(filter(token_cosines, word != target), 
        aes(x = max_row, y= similarity, color = word)) + 
   facet_wrap(~target) + 
   geom_line() 
 
-
-all_co_occurs <- left_join(cumulative_co_occurs, total_occurs)
-
-%>%
-  mutate(occurrs = )
-  filter(target != word) %>%
+direct_co_occurs <- cumulative_co_occurs%>%
+  filter(target %in% tokens,
+         word %in% tokens) %>%
+    filter(target != word) %>%
   mutate(co_occur = count/sum(count, na.rm = T))
 
 ggplot(cumulative_co_occurs, aes(x = max_row, y= co_occur, color = word)) + 
