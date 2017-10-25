@@ -17,6 +17,7 @@ library(knitr)
 library(tidyverse)
 library(tidytext)
 library(childesr)
+library(modelr)
 
 opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
                error = FALSE, cache = TRUE, tidy = FALSE)
@@ -26,6 +27,12 @@ theme_set(theme_classic(base_size = 14))
 
 
 ```{r co-occurrence}
+
+bootstrap <- function(data, n, size, id = ".id") {
+    bootstrap <- purrr::rerun(n, resample_bootstrap(data))
+    df <- tibble::data_frame(strap = bootstrap) %>%
+      mutate(id = 1:n())
+}
 
 tokens <-  c("boat", "lake", "river", "bee", "ant", "honey", 
              "cow", "zebra", "milk")
@@ -42,36 +49,51 @@ counts <- function(word, rows) {
   
   word <- enquo(word)
 
-  co_occurrs %>%
-    slice(rows) %>%
+   samples <- co_occurrs %>%
+    bootstrap(10, rows) %>%
+    mutate(strap = purrr::map(strap, dplyr::as_data_frame)) %>%
+    unnest()
+  
+  samples %>%
     filter((!!word) > 0) %>%
-    select(-utterance_id) %>%
-    summarise_all(sum) %>%
-    mutate(target = as.character(word)[2])
+     select(-utterance_id) %>%
+     group_by(id) %>%
+     summarise_all(sum) %>%
+     select(-id) %>%
+     summarise_all(mean) %>%
+     mutate(target = as.character(word)[2])
 }
 
 
-sections <- seq(500, 30000, 500)
+sections <- seq(1000, 30000, 1000)
 
-co_occur_subset <- function(max_row) {
-  map(tokens, function(token) counts(!!as.symbol(token), 1:max_row)) %>%
+co_occur_subset <- function(rows) {
+  map(tokens, function(token) counts(!!as.symbol(token), rows)) %>%
     bind_rows() %>%
-    mutate(max_row = max_row)
+    mutate(rows = rows)
 }
 
 
 cumulative_co_occurs <- map(sections,  co_occur_subset) %>%
   bind_rows() %>%
   gather(word, count, tokens) %>%
-  group_by(max_row, target) %>%
+  group_by(rows, target) %>%
   filter(target != word) %>%
-  mutate(co_occur = count/sum(count, na.rm = T))
+  mutate(co_occur = count/sum(count, na.rm = T),
+         co_occur = if_else(is.na(co_occur), 0, co_occur))
 
 
-
-ggplot(cumulative_co_occurs, aes(x = max_row, y= co_occur, color = word)) + 
+ggplot(cumulative_co_occurs, aes(x = rows, y= co_occur, color = word)) + 
   facet_wrap(~target) + 
-  geom_line() 
+  geom_line() +
+  scale_color_brewer(palette = "Set1")
+
+wide_co_occurs <- cumulative_co_occurs %>%
+  select(-co_occur) %>%
+  spread(word, count) %>%
+  filter(max_row = 4500)
+
+
  # scale_y_continuous(limits = c(0, .3))
 
 
